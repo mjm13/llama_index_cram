@@ -1,16 +1,10 @@
-# This is a sample Python script.
+from llama_index.core import SimpleDirectoryReader
+from llama_index.embeddings.ollama import OllamaEmbedding
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
+from llama_index.llms.ollama import Ollama
 
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
+llm = Ollama(model="llama3.1:latest", request_timeout=60.0)
+ollama_embedding = OllamaEmbedding(model_name="sunzhiyuan/suntray-embedding")
 
-
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press Ctrl+F8 to toggle the breakpoint.
-
-
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-    print_hi('PyCharm')
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+response = llm.complete("中国的首都是哪里?")
+print(response)
