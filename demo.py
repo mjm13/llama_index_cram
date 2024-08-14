@@ -1,3 +1,4 @@
+# 扫描本地代码
 from llama_index.core import SimpleDirectoryReader
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings

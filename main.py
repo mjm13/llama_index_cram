@@ -8,3 +8,5 @@ ollama_embedding = OllamaEmbedding(model_name="sunzhiyuan/suntray-embedding")
 
 response = llm.complete("中国的首都是哪里?")
 print(response)
+
+

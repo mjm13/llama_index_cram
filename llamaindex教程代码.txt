@@ -1,0 +1,436 @@
+Lesson 1: Router Engine
+Welcome to Lesson 1.
+
+To access the requirements.txt file, the data/pdf file required for this lesson and the helper and utils modules, please go to the File menu and selectOpen....
+
+I hope you enjoy this course!
+
+Setup
+from helper import get_openai_api_key
+​
+OPENAI_API_KEY = get_openai_api_key()
+import nest_asyncio
+​
+nest_asyncio.apply()
+Load Data
+To download this paper, below is the needed code:
+
+#!wget "https://openreview.net/pdf?id=VtmBAGCN7o" -O metagpt.pdf
+
+Note: The pdf file is included with this lesson. To access it, go to the File menu and selectOpen....
+
+from llama_index.core import SimpleDirectoryReader
+​
+# load documents
+documents = SimpleDirectoryReader(input_files=["metagpt.pdf"]).load_data()
+Define LLM and Embedding model
+from llama_index.core.node_parser import SentenceSplitter
+​
+splitter = SentenceSplitter(chunk_size=1024)
+nodes = splitter.get_nodes_from_documents(documents)
+from llama_index.core import Settings
+from llama_index.llms.openai import OpenAI
+from llama_index.embeddings.openai import OpenAIEmbedding
+​
+Settings.llm = OpenAI(model="gpt-3.5-turbo")
+Settings.embed_model = OpenAIEmbedding(model="text-embedding-ada-002")
+Define Summary Index and Vector Index over the Same Data
+from llama_index.core import SummaryIndex, VectorStoreIndex
+​
+summary_index = SummaryIndex(nodes)
+vector_index = VectorStoreIndex(nodes)
+Define Query Engines and Set Metadata
+summary_query_engine = summary_index.as_query_engine(
+    response_mode="tree_summarize",
+    use_async=True,
+)
+vector_query_engine = vector_index.as_query_engine()
+from llama_index.core.tools import QueryEngineTool
+​
+​
+summary_tool = QueryEngineTool.from_defaults(
+    query_engine=summary_query_engine,
+    description=(
+        "Useful for summarization questions related to MetaGPT"
+    ),
+)
+​
+vector_tool = QueryEngineTool.from_defaults(
+    query_engine=vector_query_engine,
+    description=(
+        "Useful for retrieving specific context from the MetaGPT paper."
+    ),
+)
+Define Router Query Engine
+from llama_index.core.query_engine.router_query_engine import RouterQueryEngine
+from llama_index.core.selectors import LLMSingleSelector
+​
+​
+query_engine = RouterQueryEngine(
+    selector=LLMSingleSelector.from_defaults(),
+    query_engine_tools=[
+        summary_tool,
+        vector_tool,
+    ],
+    verbose=True
+)
+response = query_engine.query("What is the summary of the document?")
+print(str(response))
+print(len(response.source_nodes))
+response = query_engine.query(
+    "How do agents share information with other agents?"
+)
+print(str(response))
+Let's put everything together
+from utils import get_router_query_engine
+​
+query_engine = get_router_query_engine("metagpt.pdf")
+response = query_engine.query("Tell me about the ablation study results?")
+print(str(response))
+response = query_engine.query("Tell me about the ablation study results?")
+print(str(response))
+
+
+
+Lesson 2: Tool Calling
+Setup
+from helper import get_openai_api_key
+OPENAI_API_KEY = get_openai_api_key()
+import nest_asyncio
+nest_asyncio.apply()
+1. Define a Simple Tool
+from llama_index.core.tools import FunctionTool
+​
+def add(x: int, y: int) -> int:
+    """Adds two integers together."""
+    return x + y
+​
+def mystery(x: int, y: int) -> int: 
+    """Mystery function that operates on top of two numbers."""
+    return (x + y) * (x + y)
+​
+​
+add_tool = FunctionTool.from_defaults(fn=add)
+mystery_tool = FunctionTool.from_defaults(fn=mystery)
+from llama_index.llms.openai import OpenAI
+​
+llm = OpenAI(model="gpt-3.5-turbo")
+response = llm.predict_and_call(
+    [add_tool, mystery_tool], 
+    "Tell me the output of the mystery function on 2 and 9", 
+    verbose=True
+)
+print(str(response))
+2. Define an Auto-Retrieval Tool
+Load Data
+To download this paper, below is the needed code:
+
+#!wget "https://openreview.net/pdf?id=VtmBAGCN7o" -O metagpt.pdf
+
+Note: The pdf file is included with this lesson. To access it, go to the File menu and selectOpen....
+
+from llama_index.core import SimpleDirectoryReader
+# load documents
+documents = SimpleDirectoryReader(input_files=["metagpt.pdf"]).load_data()
+from llama_index.core.node_parser import SentenceSplitter
+splitter = SentenceSplitter(chunk_size=1024)
+nodes = splitter.get_nodes_from_documents(documents)
+print(nodes[0].get_content(metadata_mode="all"))
+from llama_index.core import VectorStoreIndex
+​
+vector_index = VectorStoreIndex(nodes)
+query_engine = vector_index.as_query_engine(similarity_top_k=2)
+from llama_index.core.vector_stores import MetadataFilters
+​
+query_engine = vector_index.as_query_engine(
+    similarity_top_k=2,
+    filters=MetadataFilters.from_dicts(
+        [
+            {"key": "page_label", "value": "2"}
+        ]
+    )
+)
+​
+response = query_engine.query(
+    "What are some high-level results of MetaGPT?", 
+)
+print(str(response))
+for n in response.source_nodes:
+    print(n.metadata)
+Define the Auto-Retrieval Tool
+from typing import List
+from llama_index.core.vector_stores import FilterCondition
+​
+​
+def vector_query(
+    query: str, 
+    page_numbers: List[str]
+) -> str:
+    """Perform a vector search over an index.
+    
+    query (str): the string query to be embedded.
+    page_numbers (List[str]): Filter by set of pages. Leave BLANK if we want to perform a vector search
+        over all pages. Otherwise, filter by the set of specified pages.
+    
+    """
+​
+    metadata_dicts = [
+        {"key": "page_label", "value": p} for p in page_numbers
+    ]
+    
+    query_engine = vector_index.as_query_engine(
+        similarity_top_k=2,
+        filters=MetadataFilters.from_dicts(
+            metadata_dicts,
+            condition=FilterCondition.OR
+        )
+    )
+    response = query_engine.query(query)
+    return response
+    
+​
+vector_query_tool = FunctionTool.from_defaults(
+    name="vector_tool",
+    fn=vector_query
+)
+llm = OpenAI(model="gpt-3.5-turbo", temperature=0)
+response = llm.predict_and_call(
+    [vector_query_tool], 
+    "What are the high-level results of MetaGPT as described on page 2?", 
+    verbose=True
+)
+for n in response.source_nodes:
+    print(n.metadata)
+Let's add some other tools!
+from llama_index.core import SummaryIndex
+from llama_index.core.tools import QueryEngineTool
+​
+summary_index = SummaryIndex(nodes)
+summary_query_engine = summary_index.as_query_engine(
+    response_mode="tree_summarize",
+    use_async=True,
+)
+summary_tool = QueryEngineTool.from_defaults(
+    name="summary_tool",
+    query_engine=summary_query_engine,
+    description=(
+        "Useful if you want to get a summary of MetaGPT"
+    ),
+)
+response = llm.predict_and_call(
+    [vector_query_tool, summary_tool], 
+    "What are the MetaGPT comparisons with ChatDev described on page 8?", 
+    verbose=True
+)
+for n in response.source_nodes:
+    print(n.metadata)
+response = llm.predict_and_call(
+    [vector_query_tool, summary_tool], 
+    "What is a summary of the paper?", 
+    verbose=True
+response = llm.predict_and_call(
+    [vector_query_tool, summary_tool], 
+    "What is a summary of the paper?", 
+    verbose=True
+)
+
+
+
+
+Lesson 3: Building an Agent Reasoning Loop
+Setup
+from helper import get_openai_api_key
+OPENAI_API_KEY = get_openai_api_key()
+import nest_asyncio
+nest_asyncio.apply()
+Load the data
+To download this paper, below is the needed code:
+
+#!wget "https://openreview.net/pdf?id=VtmBAGCN7o" -O metagpt.pdf
+
+Note: The pdf file is included with this lesson. To access it, go to the File menu and selectOpen....
+
+Setup the Query Tools
+from utils import get_doc_tools
+​
+vector_tool, summary_tool = get_doc_tools("metagpt.pdf", "metagpt")
+Setup Function Calling Agent
+from llama_index.llms.openai import OpenAI
+​
+llm = OpenAI(model="gpt-3.5-turbo", temperature=0)
+from llama_index.core.agent import FunctionCallingAgentWorker
+from llama_index.core.agent import AgentRunner
+​
+agent_worker = FunctionCallingAgentWorker.from_tools(
+    [vector_tool, summary_tool], 
+    llm=llm, 
+    verbose=True
+)
+agent = AgentRunner(agent_worker)
+response = agent.query(
+    "Tell me about the agent roles in MetaGPT, "
+    "and then how they communicate with each other."
+)
+print(response.source_nodes[0].get_content(metadata_mode="all"))
+response = agent.chat(
+    "Tell me about the evaluation datasets used."
+)
+response = agent.chat("Tell me the results over one of the above datasets.")
+Lower-Level: Debuggability and Control
+agent_worker = FunctionCallingAgentWorker.from_tools(
+    [vector_tool, summary_tool], 
+    llm=llm, 
+    verbose=True
+)
+agent = AgentRunner(agent_worker)
+task = agent.create_task(
+    "Tell me about the agent roles in MetaGPT, "
+    "and then how they communicate with each other."
+)
+step_output = agent.run_step(task.task_id)
+completed_steps = agent.get_completed_steps(task.task_id)
+print(f"Num completed for task {task.task_id}: {len(completed_steps)}")
+print(completed_steps[0].output.sources[0].raw_output)
+upcoming_steps = agent.get_upcoming_steps(task.task_id)
+print(f"Num upcoming steps for task {task.task_id}: {len(upcoming_steps)}")
+upcoming_steps[0]
+step_output = agent.run_step(
+    task.task_id, input="What about how agents share information?"
+)
+step_output = agent.run_step(task.task_id)
+print(step_output.is_last)
+response = agent.finalize_response(task.task_id)
+print(str(response))
+print(str(response))
+
+
+
+Lesson 4: Building a Multi-Document Agent
+Setup
+from helper import get_openai_api_key
+OPENAI_API_KEY = get_openai_api_key()
+import nest_asyncio
+nest_asyncio.apply()
+1. Setup an agent over 3 papers
+Note: The pdf files are included with this lesson. To access these papers, go to the File menu and selectOpen....
+
+urls = [
+    "https://openreview.net/pdf?id=VtmBAGCN7o",
+    "https://openreview.net/pdf?id=6PmJoRfdaK",
+    "https://openreview.net/pdf?id=hSyW5go0v8",
+]
+​
+papers = [
+    "metagpt.pdf",
+    "longlora.pdf",
+    "selfrag.pdf",
+]
+from utils import get_doc_tools
+from pathlib import Path
+​
+paper_to_tools_dict = {}
+for paper in papers:
+    print(f"Getting tools for paper: {paper}")
+    vector_tool, summary_tool = get_doc_tools(paper, Path(paper).stem)
+    paper_to_tools_dict[paper] = [vector_tool, summary_tool]
+initial_tools = [t for paper in papers for t in paper_to_tools_dict[paper]]
+from llama_index.llms.openai import OpenAI
+​
+llm = OpenAI(model="gpt-3.5-turbo")
+len(initial_tools)
+from llama_index.core.agent import FunctionCallingAgentWorker
+from llama_index.core.agent import AgentRunner
+​
+agent_worker = FunctionCallingAgentWorker.from_tools(
+    initial_tools, 
+    llm=llm, 
+    verbose=True
+)
+agent = AgentRunner(agent_worker)
+response = agent.query(
+    "Tell me about the evaluation dataset used in LongLoRA, "
+    "and then tell me about the evaluation results"
+)
+response = agent.query("Give me a summary of both Self-RAG and LongLoRA")
+print(str(response))
+2. Setup an agent over 11 papers
+Download 11 ICLR papers
+urls = [
+    "https://openreview.net/pdf?id=VtmBAGCN7o",
+    "https://openreview.net/pdf?id=6PmJoRfdaK",
+    "https://openreview.net/pdf?id=LzPWWPAdY4",
+    "https://openreview.net/pdf?id=VTF8yNQM66",
+    "https://openreview.net/pdf?id=hSyW5go0v8",
+    "https://openreview.net/pdf?id=9WD9KwssyT",
+    "https://openreview.net/pdf?id=yV6fD7LYkF",
+    "https://openreview.net/pdf?id=hnrB5YHoYu",
+    "https://openreview.net/pdf?id=WbWtOYIzIK",
+    "https://openreview.net/pdf?id=c5pwL0Soay",
+    "https://openreview.net/pdf?id=TpD2aG1h0D"
+]
+​
+papers = [
+    "metagpt.pdf",
+    "longlora.pdf",
+    "loftq.pdf",
+    "swebench.pdf",
+    "selfrag.pdf",
+    "zipformer.pdf",
+    "values.pdf",
+    "finetune_fair_diffusion.pdf",
+    "knowledge_card.pdf",
+    "metra.pdf",
+    "vr_mcl.pdf"
+]
+To download these papers, below is the needed code:
+
+#for url, paper in zip(urls, papers):
+     #!wget "{url}" -O "{paper}"
+Note: The pdf files are included with this lesson. To access these papers, go to the File menu and selectOpen....
+
+from utils import get_doc_tools
+from pathlib import Path
+​
+paper_to_tools_dict = {}
+for paper in papers:
+    print(f"Getting tools for paper: {paper}")
+    vector_tool, summary_tool = get_doc_tools(paper, Path(paper).stem)
+    paper_to_tools_dict[paper] = [vector_tool, summary_tool]
+Extend the Agent with Tool Retrieval
+all_tools = [t for paper in papers for t in paper_to_tools_dict[paper]]
+# define an "object" index and retriever over these tools
+from llama_index.core import VectorStoreIndex
+from llama_index.core.objects import ObjectIndex
+​
+obj_index = ObjectIndex.from_objects(
+    all_tools,
+    index_cls=VectorStoreIndex,
+)
+obj_retriever = obj_index.as_retriever(similarity_top_k=3)
+tools = obj_retriever.retrieve(
+    "Tell me about the eval dataset used in MetaGPT and SWE-Bench"
+)
+tools[2].metadata
+from llama_index.core.agent import FunctionCallingAgentWorker
+from llama_index.core.agent import AgentRunner
+​
+agent_worker = FunctionCallingAgentWorker.from_tools(
+    tool_retriever=obj_retriever,
+    llm=llm, 
+    system_prompt=""" \
+You are an agent designed to answer queries over a set of given papers.
+Please always use the tools provided to answer a question. Do not rely on prior knowledge.\
+​
+""",
+    verbose=True
+)
+agent = AgentRunner(agent_worker)
+response = agent.query(
+    "Tell me about the evaluation dataset used "
+    "in MetaGPT and compare it against SWE-Bench"
+)
+print(str(response))
+response = agent.query(
+    "Compare and contrast the LoRA papers (LongLoRA, LoftQ). "
+    "Analyze the approach in each paper first. "
+)
