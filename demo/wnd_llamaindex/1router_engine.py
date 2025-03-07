@@ -10,11 +10,11 @@ from llama_index.core.selectors import LLMSingleSelector
 import time
 
 start_time = time.time()
-Settings.llm = Ollama(model="qwen2:1.5b",temperature=0.3,request_timeout=10000.0)
+Settings.llm = Ollama(model="llama3.2",temperature=0.3)
 # Settings.llm = Ollama(model="gemma2:2b",temperature=0.6,request_timeout=10000.0)
 Settings.embed_model = OllamaEmbedding(model_name="sunzhiyuan/suntray-embedding")
 
-documents = SimpleDirectoryReader(input_files=["D:\Java.pdf"]).load_data()
+documents = SimpleDirectoryReader(input_files=["D:\资料备份\文档备份\Books\gun_make.pdf"]).load_data()
 splitter = SentenceSplitter(chunk_size=1024)
 nodes = splitter.get_nodes_from_documents(documents)
 # TODO 创建索引之后如何存储索引
